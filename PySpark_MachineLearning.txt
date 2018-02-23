@@ -1,0 +1,191 @@
+data = sc.textFile("<User_URL>")
+
+df = data.map(lambda x:x.split(",")).toDF(["age","job","marital","education","default","balance","housing","loan","contact","day","month","duration","campaign","pdays","previous","poutcome","y"])
+
+df.registerTempTable("bank")
+
+## To see the data types of different features.
+df.dtypes
+
+## To convert the features to appropriate data types and other pre processings
+
+df1 = sqlContext.sql("select cast(age as int) as age,job,marital,education,default,(case when (balance < 0) then double(0) else double(balance) end) as balance,housing,loan,contact,cast(day as int) as day,month,cast(duration as double) as duration,cast(campaign as double) as campaign,(case when (pdays < 0) then double(0) else double(pdays) end) as pdays,cast(previous as double) as previous,poutcome,(case when (y = 'no') then int(0) else int(1) end) as Approved from bank")
+
+
+train,test=df1.randomSplit([0.7, 0.3])
+
+
+train.groupBy("Approved").count().orderBy("Approved").show()
+
+
+test.groupBy("Approved").count().orderBy("Approved").show()
+
+from pyspark.ml.feature import OneHotEncoder, StringIndexer, VectorAssembler,  VectorIndexer
+
+###### Sample for loop statements to deal with categorical features
+#cat_list=["job","martial","education","default","housing","loan","day","month","poutcom#e"]
+
+#indexers = [StringIndexer(inputCol=column, outputCol=column+"_index") for column in #cat_list ]
+
+#encoders = [StringIndexer(inputCol=column+"_index", outputCol=column+"_vec") for #column in cat_list ]
+
+#assembler = VectorAssembler(inputCols=["job_vec", "marital_vec", #"education_vec","default_vec","housing_vec","loan_vec","day_vec","month_vec","poutcome_#vec","age","balance","duration"], outputCol="features")
+######################################################################
+
+
+
+
+job_indexer = StringIndexer( inputCol="job",outputCol="job_idx")
+marital_indexer = StringIndexer( inputCol="marital",outputCol="marital_idx")
+education_indexer = StringIndexer( inputCol="education",outputCol="education_idx")
+default_indexer = StringIndexer( inputCol="default",outputCol="default_idx")
+housing_indexer = StringIndexer( inputCol="housing",outputCol="housing_idx")
+loan_indexer = StringIndexer( inputCol="loan",outputCol="loan_idx")
+day_indexer = StringIndexer( inputCol="day",outputCol="day_idx")
+month_indexer = StringIndexer( inputCol="month",outputCol="month_idx")
+poutcome_indexer = StringIndexer( inputCol="poutcome",outputCol="poutcome_idx")
+
+job_encoder = OneHotEncoder(inputCol="job_idx",outputCol= "job_vec")
+marital_encoder = OneHotEncoder(inputCol="marital_idx",outputCol= "marital_vec")
+education_encoder = OneHotEncoder(inputCol="education_idx",outputCol= "education_vec")
+default_encoder = OneHotEncoder(inputCol="default_idx",outputCol= "default_vec")
+housing_encoder = OneHotEncoder(inputCol="housing_idx",outputCol= "housing_vec")
+loan_encoder = OneHotEncoder(inputCol="loan_idx",outputCol= "loan_vec")
+day_encoder = OneHotEncoder(inputCol="day_idx",outputCol= "day_vec")
+month_encoder = OneHotEncoder(inputCol="month_idx",outputCol= "month_vec")
+poutcome_encoder = OneHotEncoder(inputCol="poutcome_idx",outputCol= "poutcome_vec")
+
+
+assembler = VectorAssembler(inputCols=["job_vec", "marital_vec", "education_vec","default_vec","housing_vec","loan_vec","day_vec","month_vec","poutcome_vec","age","balance","duration"], outputCol="features")
+
+
+labelIndexer = StringIndexer(inputCol="Approved", outputCol="indexedLabel").fit(train)
+from pyspark.ml.feature import IndexToString
+labelConverter = IndexToString(inputCol="prediction",outputCol="predictedLabel",labels=labelIndexer.labels)
+
+from pyspark.ml.classification import LogisticRegression
+from pyspark.ml import Pipeline
+
+lr = LogisticRegression(maxIter=30,labelCol="indexedLabel", featuresCol="features")
+
+stages=[job_indexer, marital_indexer, education_indexer, default_indexer,
+housing_indexer,loan_indexer,day_indexer,month_indexer,poutcome_indexer,job_encoder,
+marital_encoder,education_encoder,default_encoder,housing_encoder,loan_encoder,
+day_encoder,month_encoder,poutcome_encoder,labelIndexer,assembler]
+
+stages.append(lr)
+stages.append(labelConverter)
+
+pipeline = Pipeline(stages=stages)
+
+model = pipeline.fit(train)
+predictions = model.transform(train)
+
+
+
+predictions.select("indexedLabel","predictedLabel", "prediction").show(5,False)
+
+
+true_positive = predictions[(predictions.indexedLabel == 1) & (predictions.prediction == 1.0)].count()
+true_negative = predictions[(predictions.indexedLabel == 0) & (predictions.prediction == 0.0)].count()
+false_positive = predictions[(predictions.indexedLabel == 0) & (predictions.prediction == 1.0)].count()
+false_negative = predictions[(predictions.indexedLabel == 1) & (predictions.prediction == 0.0)].count()
+print "True Positives:", true_positive
+print "True Negatives:", true_negative
+print "False Positives:", false_positive
+print "False Negatives:", false_negative
+print "Total", predictions.count()
+
+
+pred_test=model.transform(test)
+true_positive = pred_test[(pred_test.indexedLabel == 1) & (pred_test.prediction == 1.0)].count()
+true_negative = pred_test[(pred_test.indexedLabel == 0) & (pred_test.prediction == 0.0)].count()
+false_positive = pred_test[(pred_test.indexedLabel == 0) & (pred_test.prediction == 1.0)].count()
+false_negative = pred_test[(pred_test.indexedLabel == 1) & (pred_test.prediction == 0.0)].count()
+print "True Positives:", true_positive
+print "True Negatives:", true_negative
+print "False Positives:", false_positive
+print "False Negatives:", false_negative
+print "Total", pred_test.count()
+
+
+from pyspark.ml.classification import RandomForestClassifier
+rf = RandomForestClassifier(labelCol="indexedLabel", featuresCol="features",numTrees=100,maxDepth=12,maxBins=8)
+
+
+stages1=[job_indexer, marital_indexer, education_indexer, default_indexer,
+housing_indexer,loan_indexer,day_indexer,month_indexer,poutcome_indexer,job_encoder,
+marital_encoder,education_encoder,default_encoder,housing_encoder,loan_encoder,
+day_encoder,month_encoder,poutcome_encoder,labelIndexer,assembler]
+stages1.append(rf)
+stages1.append(labelConverter)
+
+
+
+pipeline = Pipeline(stages=stages1)
+
+
+
+model = pipeline.fit(train)
+predictions = model.transform(train)
+
+
+
+true_positive = predictions[(predictions.indexedLabel == 1) & (predictions.prediction == 1.0)].count()
+true_negative = predictions[(predictions.indexedLabel == 0) & (predictions.prediction == 0.0)].count()
+false_positive = predictions[(predictions.indexedLabel == 0) & (predictions.prediction == 1.0)].count()
+false_negative = predictions[(predictions.indexedLabel == 1) & (predictions.prediction == 0.0)].count()
+print "True Positives:", true_positive
+print "True Negatives:", true_negative
+print "False Positives:", false_positive
+print "False Negatives:", false_negative
+print "Total", predictions.count()
+
+
+
+pred_test=model.transform(test)
+true_positive = pred_test[(pred_test.indexedLabel == 1) & (pred_test.prediction == 1.0)].count()
+true_negative = pred_test[(pred_test.indexedLabel == 0) & (pred_test.prediction == 0.0)].count()
+false_positive = pred_test[(pred_test.indexedLabel == 0) & (pred_test.prediction == 1.0)].count()
+false_negative = pred_test[(pred_test.indexedLabel == 1) & (pred_test.prediction == 0.0)].count()
+print "True Positives:", true_positive
+print "True Negatives:", true_negative
+print "False Positives:", false_positive
+print "False Negatives:", false_negative
+print "Total", pred_test.count()
+
+
+
+print model.stages[20]._call_java('toDebugString')
+
+
+
+py_df = pred_test.toPandas()
+label = py_df.indexedLabel.tolist()
+pred = py_df.prediction.tolist()
+
+from sklearn import metrics as smetrics
+cm = smetrics.confusion_matrix( label, pred )
+
+from string import ascii_letters
+import matplotlib.pyplot as plt; plt.rcdefaults()
+import numpy as np
+import seaborn as sn
+import matplotlib.pyplot as plt
+import StringIO
+
+def show(p):
+    img = StringIO.StringIO()
+    p.savefig(img, format='svg')
+    img.seek(0)
+    print "%html <div style='width:600px'>" + img.buf + "</div>"
+df_cm = pd.DataFrame(cm)
+df_cm.index = ['Not Approved', 'Approved']
+df_cm.columns = ['Not Approved', 'Approved']
+names=['Not Approved', 'Approved']
+print(df_cm)
+plt.figure(figsize = (10,7))
+sn.set(font_scale=1.4)#for label size
+sn.heatmap(df_cm, annot=True,fmt="d",annot_kws={"size": 20})# font size
+show(plt)
+

@@ -1,0 +1,309 @@
+Understand how Apache Sqoop efficiently transfers bulk data between Hadoop and structured data stores such as relational databases.
+
+Some of the application areas of Apache Sqoop are.
+1. Sqoop helps ETL processing from the EDW to Hadoop for efficient execution at much 	lower cost.
+
+2. Used to extract data from Hadoop and export into external data structured data stores.
+
+3. Works with all popular databases such as MySQL, MS SQL Server, Oracle, Teradata, Netezza, Postgres and HSQLDB etc.
+
+4. Import sequential datasets from legacy systems such as mainframes.
+
+In this example, we will import data from a relational database MySQL to HDFS.
+
+
+## Initial import - this imports all 6 tables from mysql to HDFS. (each table's data will be loaded into a directory)
+
+1. Sqoop import - execute below command on terminal
+sqoop job \
+--create initialimport \
+-- import-all-tables \
+--connect <Cluster_URL> 
+--username <user_name> \
+--password <Password> \
+--warehouse-dir '../employeesdb/' \
+-m 1
+
+sqoop job --exec initialimport
+
+--------- incremental / Delta Loads ---------
+
+#### import only newly added/updated rows.
+
+sqoop job \
+--create inc_imp_emp \
+-- import \
+--connect <Cluster_URL> 
+--username <user_name> \
+--password <Password> \
+--table employees \
+--incremental append \
+--check-column emp_no \
+--last-value 300024 \
+--target-dir '../employeesdb/employees/' \
+-m 1
+
+sqoop job --exec inc_imp_emp
+
+-----
+
+sqoop job \
+--create inc_imp_dept \
+-- import \
+--connect <Cluster_URL> 
+--username <user_name> \
+--password <Password> \
+--table departments \
+--incremental lastmodified \
+--check-column last_modified \
+--last-value "2013-01-28 23:59:59" \
+--target-dir '../employeesdb/departments/' \
+-m 1 \
+--merge-key dept_no
+
+sqoop job --exec inc_imp_dept
+
+-----
+
+sqoop job \
+--create inc_imp_deptemp \
+-- import \
+--connect <Cluster_URL> 
+--username <user_name> \
+--password <Password> \
+--table dept_emp \
+--incremental lastmodified \
+--check-column last_modified \
+--last-value "2013-01-28 23:59:59" \
+--target-dir '../employeesdb/dept_emp/' \
+--merge-key seq_no \
+--split-by seq_no
+
+sqoop job --exec inc_imp_deptemp
+
+-----
+sqoop job \
+--create inc_imp_deptmgr \
+-- import \
+--connect <Cluster_URL> 
+--username <user_name> \
+--password <Password> \
+--table dept_manager \
+--incremental lastmodified \
+--check-column last_modified \
+--last-value "2013-01-28 23:59:59" \
+--target-dir '../employeesdb/dept_manager/' \
+--merge-key seq_no \
+--split-by seq_no
+
+sqoop job --exec inc_imp_deptmgr
+
+-----
+
+sqoop job \
+--create inc_imp_sal \
+-- import \
+--connect <Cluster_URL> 
+--username <user_name> \
+--password <Password> \
+--table salaries \
+--incremental lastmodified \
+--check-column last_modified \
+--last-value "2013-01-28 23:59:59" \
+--target-dir '../employeesdb/salaries/' \
+--merge-key seq_no \
+--split-by seq_no
+
+sqoop job --exec inc_imp_sal
+
+-----
+
+sqoop job \
+--create inc_imp_titles \
+-- import \
+--connect <Cluster_URL> 
+--username <user_name> \
+--password <Password> \
+--table titles \
+--incremental lastmodified \
+--check-column last_modified \
+--last-value "2013-01-28 23:59:59" \
+--target-dir '../employeesdb//titles/' \
+--merge-key seq_no \
+--split-by seq_no
+sqoop job --exec inc_imp_titles
+
+
+
+
+---- MERGE KEY FOR EACH TABLE ----
+deparrtments - merge-key dept_no
+dept_emp - merge-key seq_no
+dept_manager - merge-key seq_no
+
+salaries - merge-key seq_no
+titles - merge-key seq_no
+-- split-by seq_no
+
+
+
+1) Table creation in HIVE : employees
+CREATE EXTERNAL TABLE IF NOT EXISTS employees(
+emp_no int,
+birth_date date,
+first_name STRING,
+last_name STRING,
+gender STRING,
+hire_date date,
+last_modified TIMESTAMP)
+COMMENT 'Hive table Definition about Employees table from employees database'
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE
+LOCATION '../employeesdb/employees'
+
+2) Departments
+CREATE EXTERNAL TABLE IF NOT EXISTS departments(
+dept_no STRING,
+dept_name STRING,
+last_modified TIMESTAMP)
+COMMENT 'Hive table Definition about Departments table from employee database'
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE
+LOCATION '../employeesdb/departments';
+
+3) Dept_Emp
+CREATE EXTERNAL TABLE IF NOT EXISTS dept_emp(
+seq_no int,
+emp_no int,
+dept_no string,
+from_date date,
+to_date date,
+last_modified TIMESTAMP)
+COMMENT 'Hive table Definition about Dept_Emp table from employees database'
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE
+LOCATION '../employeesdb/dept_emp';
+
+4) Dept_Manager
+CREATE EXTERNAL TABLE IF NOT EXISTS dept_manager(
+seq_no int,
+dept_no STRING,
+emp_no int,
+from_date date,
+to_date date,
+last_modified TIMESTAMP)
+COMMENT 'Hive table Definition about dept_manager table from employees database'
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE
+LOCATION '../employeesdb/dept_manager';
+
+5) Salaries
+CREATE EXTERNAL TABLE IF NOT EXISTS salaries(
+seq_no int,
+emp_no int,
+salary int,
+from_date date,
+to_date date,
+last_modified TIMESTAMP)
+COMMENT 'Hive table Definition about salaries table from employees database'
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE
+LOCATION '../employeesdb/salaries';
+
+6) titles:
+CREATE EXTERNAL TABLE IF NOT EXISTS titles(
+seq_no int,
+emp_no int,
+title STRING,
+from_date date,
+to_date date,
+last_modified TIMESTAMP)
+COMMENT 'Hive table Definition about titles table from employees database'
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE
+LOCATION '../employeesdb/titles';
+
+
+PIG: pig -useHCatalog
+1) Dump Dept_Emp
+dept_emp = LOAD 'insofe_empdb_1472B32.dept_emp' USING org.apache.hive.hcatalog.pig.HCatLoader(); 
+active_dept_emp = FILTER dept_emp BY to_date == ToDate('9999-01-01');
+active_dept_emp10 = LIMIT active_dept_emp 10;
+dump active_dept_emp10;
+
+2) Dump Employees
+employees = LOAD 'insofe_empdb_1472B32.employees' USING org.apache.hive.hcatalog.pig.HCatLoader(); 
+
+3) Dump Departments
+departments = LOAD 'insofe_empdb_1472B32.departments' USING org.apache.hive.hcatalog.pig.HCatLoader();
+limit_dept = LIMIT departments 5;
+dump limit_dept;
+
+
+4) dept_manager
+dept_manager = LOAD 'insofe_empdb_1472B32.dept_manager' USING org.apache.hive.hcatalog.pig.HCatLoader(); 
+active_dept_manager = FILTER dept_manager BY to_date == ToDate('9999-01-01');
+active_dept_manager10 = LIMIT active_dept_manager 10;
+dump active_dept_manager10;
+
+5) Salaries:
+salaries= LOAD 'insofe_empdb_1472B32.salaries' USING org.apache.hive.hcatalog.pig.HCatLoader(); 
+active_salaries = FILTER salaries BY to_date == ToDate('9999-01-01');
+active_dept_salary10 = LIMIT active_salaries 10;
+dump active_dept_salary10;
+
+6) Titles
+titles = LOAD 'insofe_empdb_1472B32.titles' USING org.apache.hive.hcatalog.pig.HCatLoader(); 
+active_titles = FILTER titles BY to_date == ToDate('9999-01-01');
+active_dept_titles10 = LIMIT active_titles 10;
+dump active_dept_titles10;
+
+
+PIG JOIN: (Before join every time have to run above dump command of this file)
+
+1) dept_rel = join departments by (dept_no), active_dept_manager by(dept_no);
+dump_dept_rel = LIMIT dept_rel 10;
+dump dump_dept_rel;
+
+2) dept_rel2 = join dept_rel by (active_dept_manager::emp_no), employees by (emp_no);
+## FIRST WAY
+final_dept_rel2 = foreach dept_rel2 generate active_dept_manager::emp_no, active_dept_manager::dept_no, dept_name, from_date, to_date, birth_date, first_name,last_name, gender, hire_date;
+
+### SECOND WAY
+f_d_r2 = foreach dept_rel2 generate $0 AS dept_no, $1 AS dept_name, $5 AS manager_emp_no, $6 AS manager_from_date, $7 AS manager_to_date, $10 AS manager_birth_date, $11 AS manager_first_name, $12 AS  last_name, $13 AS manager_gender, $14 AS manager_hire_date;
+dump_dept_rel2 = LIMIT f_d_r2 10;
+dump dump_dept_rel2;
+
+3) emp_dept_rel = join active_dept_emp by (emp_no), employees by (emp_no);
+## FIRST WAY
+final_emp_dept_rel = foreach emp_dept_rel generate active_dept_emp::emp_no, birth_date, first_name,last_name,gender,hire_date,dept_no, from_date,to_date;  ### Only find the relation based on acive employee
+
+## SECOND WAY
+f_e_d_r = foreach emp_dept_rel generate $6 AS emp_no, $7 AS birth_date, $8 AS first_name, $9 AS last_name, $10 AS gender, $11 AS hire_date, 
+$2 AS dept_no, $3 AS dept_from_date, $4 AS dept_to_date;
+emp_dept_rel5 = LIMIT f_e_d_r  5;
+dump emp_dept_rel5;
+
+4) 
+active_emp_rel1 = join f_e_d_r  by (dept_no), f_d_r2 by (dept_no);
+
+5) 
+sal_title_rel = join active_titles by (emp_no), active_salaries by (emp_no);
+final_sal_title_rel = foreach sal_title_rel generate $1 AS emp_no, $8 AS salary, $9 AS salary_from_date, $10 AS salary_to_date, $2 AS title, $3 AS title_from_date, $4 AS title_to_date;
+
+6) 
+active_emp_rel2 = join active_emp_rel1 by (), final_sal_title_rel
+
+6) 
+active_emp_rel2 = join active_emp_rel1 by (f_e_d_r::emp_no), final_sal_title_rel by (emp_no);
+final_active_emp_rel2 = foreach active_emp_rel2 generate $0 AS emp_no, $2 AS first_name, $3 AS last_name, $4 AS gender, $1 AS birth_date, $5 AS hire_date, $6 AS dept_no, $10 AS dept_name, $7 AS dept_from_date, $20 AS salary, $21 AS salary_from_date, $23 AS title, $24 AS title_from_date, $11 AS manager_emp_no, $15 AS manager_first_name, $16 AS manager_last_name, $17 AS manager_gender, $14 AS manager_birth_date, $18 AS manager_hire_date, $12 AS manager_from_date, YearsBetween(ToDate(ToString(CurrentTime(),'yyyy-MM-dd')), $1) AS age,  YearsBetween(ToDate(ToString(CurrentTime(),'yyyy-MM-dd')), $5) AS tenure, YearsBetween(ToDate(ToString(CurrentTime(),'yyyy-MM-dd')), $14) AS manager_age, YearsBetween(ToDate(ToString(CurrentTime(),'yyyy-MM-dd')), $18) AS manager_tenure, YearsBetween(ToDate(ToString(CurrentTime(),'yyyy-MM-dd')), $21) AS salary_since, YearsBetween(ToDate(ToString(CurrentTime(),'yyyy-MM-dd')), $24) AS role_since;
+
+
+
+
